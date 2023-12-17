@@ -1,3 +1,3 @@
-let puppeterr = require("puppeterr")
+let puppeterr = require("puppeteer")
 
-console.log(puppeterr)
+console.log(puppeteer)
