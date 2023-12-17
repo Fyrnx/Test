@@ -1,3 +1,3 @@
-let puppeterr = require("puppeteer")
+let puppeteer = require("puppeteer")
 
 console.log(puppeteer)
