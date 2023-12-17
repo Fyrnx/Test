@@ -5,3 +5,4 @@ puppeteer.launch({
 })
 
 console.log("end")
+console.log("end2")
