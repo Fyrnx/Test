@@ -1,3 +1,3 @@
-let puppeteer = require("puppeteer")
+let puppeteer = require("puppeteer").default
 
-console.log(puppeteer)
+console.log(puppeteer.launch)
