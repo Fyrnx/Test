@@ -1,3 +1,5 @@
 let puppeteer = require("puppeteer").default
 
-console.log(puppeteer.launch)
+puppeteer.launch({
+    headless: "new"
+})
