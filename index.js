@@ -2,7 +2,6 @@ const port = process.env.PORT ?? 6000
 let puppeteer = require("puppeteer").default
 let http = require("http")
 let url = require("url");
-const URL = "https://wiki.anidb.net/Main_Page"
 let browser 
 
 puppeteer.launch({
@@ -11,26 +10,136 @@ puppeteer.launch({
     browser = result
 })
 
-http.createServer(async (req,res) => {
-    res.setHeader('Access-Control-Allow-Origin','*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, PUT, PATCH, DELETE');
 
+function wait({selector}) { 
+    function waitForSelector(selector) {
+        return new Promise(resolve => {
+            let result
+            let check = _ => {
+                let result = document.querySelectorAll(selector)
+                if(result && result.length > 0) resolve(result)
+            }
 
+            if (check()) {resolve(result)}
     
-    if(browser == undefined) return res.end()
+            const observer = new MutationObserver(mutations => {
+                if (check()) {
+                    observer.disconnect();
+                    resolve(result);
+                }
+            });
+    
+            observer.observe(document.documentElement, {
+                childList: true,
+                subtree: true
+            });
+        });
+    }
+
+    if(typeof arguments[0] != "object") return waitForSelector(arguments[0])
+    if(selector) return waitForSelector(selector)
+}
+
+function sleep(ms) { 
+    return new Promise((resolve, reject) => {
+        setTimeout(_ => resolve("sleeped for " + ms),ms)
+    })
+}
+
+async function evaluateScripts(url,scripts) {
+    if(browser == undefined) return {}
     let page = await browser.newPage()
 
     try {
-        await page.goto(URL, {timeout: 0});
+        await page.goto(url, {timeout: 0});
     } catch(err) {}
+    
+    let lastResult
+    if(scripts) {
+        try { 
+            for(let [index,script] of scripts.entries()) {
+                scriptResult = await page.evaluate(eval(`async _ => {
+                    return await new Promise(async res => { 
+                        try {
+                            let script = eval(${script});
+                            let wait = eval(${wait.toString()});
+                            let sleep = eval(${sleep.toString()});
+                            let lastResult = ${lastResult != undefined ? `JSON.parse(${lastResult})` : `undefined`}
+                            let gotoUrl = url => { 
+                                res({
+                                    type: "goto",
+                                    url
+                                })
+                            };
+                
+                            let scriptResult = await script({gotoUrl,wait,sleep})
+                            res(scriptResult)
+                        } catch(_e) {
+                            console.log("from browser",_e)
+                            res({
+                                type:"error",
+                                message:_e.toString()
+                            })
+                        }
+                    })
+                }`))
+    
+                if(scriptResult?.type == "goto" && scriptResult.url) { 
+                    let gotoPromise = page.goto(scriptResult.url, {timeout: 0})
+                    await Promise.race([
+                        gotoPromise,
+                        page.waitForSelector("html").then(console.log)
+                    ])
+                    return
+                }
 
-    let imageSrc = await page.evaluate(_ => { 
-        let a = document.querySelector(".mw-wiki-logo")
-        return getComputedStyle(a).backgroundImage.match(/http[^"']+/ig)[0]
+                if(scriptResult?.type == "error") { 
+                    console.log(scriptResult);
+                    lastResult = JSON.stringify({ 
+                        generalType: "error",
+                        type: "borwser error",
+                        message: scriptResult?.message ?? "unknown error"
+                    })
+                    break
+                }
+                 
+                if(scriptResult != undefined) lastResult = JSON.stringify(scriptResult);
+                else lastResult = scriptResult
+            }
+        } catch(_e) {
+            lastResult = JSON.stringify({
+                generalType: "error",
+                type: "server error",
+                message: _e
+            })
+        }
+    }
+
+    // await page.close()
+    return lastResult
+};
+
+http.createServer(async (req,res) => {
+    res.setHeader('Access-Control-Allow-Origin','*');
+    res.setHeader('Access-Control-Allow-Methods', '*');
+
+    let body = []
+    req.on("data",chunk => {
+        body.push(chunk.toString())
     })
+    await new Promise(res => req.on("end",_ => { 
+        try {
+            body = JSON.parse(body.join(''))
+        } catch(_) {}
+        res()
+    }))
 
-    console.log(imageSrc);
-    res.end(imageSrc)
-}).listen(port,_ => { 
-    console.log(`listing to ${port}`)
-})
+    if(browser == undefined) res.end("failed to get the content")
+
+    let urlParem = req.url.slice(1)
+    if(urlParem == undefined) return res.end("url not found")
+    let scriptResult = await evaluateScripts(urlParem,body.scripts);
+
+    if(scriptResult != undefined) res.end(scriptResult)
+    else res.end(JSON.stringify({}))
+}).listen(port)
