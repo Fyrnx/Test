@@ -25,7 +25,7 @@ http.createServer(async (req,res) => {
 
     let imageSrc = await page.evaluate(_ => { 
         let a = document.querySelector(".mw-wiki-logo")
-        return getComputedStyle(a).backgroundImage.match(/http[^"']+/ig)[0]
+        return a.href
     })
 
     console.log(imageSrc);
