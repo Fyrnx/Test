@@ -120,6 +120,7 @@ async function evaluateScripts(url,scripts) {
 };
 
 http.createServer(async (req,res) => {
+    console.log(req.url);
     res.setHeader('Access-Control-Allow-Origin','*');
     res.setHeader('Access-Control-Allow-Methods', '*');
 
