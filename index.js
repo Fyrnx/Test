@@ -2,6 +2,7 @@ const port = process.env.PORT ?? 6000
 let puppeteer = require("puppeteer").default
 let http = require("http")
 let url = require("url");
+const URL = "https://wiki.anidb.net/Main_Page"
 let browser 
 
 puppeteer.launch({
@@ -20,12 +21,12 @@ http.createServer(async (req,res) => {
     let page = await browser.newPage()
 
     try {
-        await page.goto(url, {timeout: 0});
+        await page.goto(URL, {timeout: 0});
     } catch(err) {}
 
     let imageSrc = await page.evaluate(_ => { 
         let a = document.querySelector(".mw-wiki-logo")
-        return a.href
+        return getComputedStyle(a).backgroundImage.match(/http[^"']+/ig)[0]
     })
 
     console.log(imageSrc);
