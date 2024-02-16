@@ -16,7 +16,7 @@ let {default: puppeteer,executablePath} = require('puppeteer');
 let browser
 (async _ => {
     browser = await puppeteer.launch({
-        headless: false,
+        headless: "new",
         timeout: 0,
         executablePath: executablePath(),
     })
