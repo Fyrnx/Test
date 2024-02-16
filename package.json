@@ -23,7 +23,7 @@
     "undici-types": "^6.0.1"
   },
   "scripts": {
-    "build": "npm i;npx @puppeteer/browsers install chrome;",
+    "build": "npm i;npx puppeteer browsers install chrome;",
     "start": "npm run build;node index.js"
   },
   "keywords": [],
