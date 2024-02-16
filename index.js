@@ -123,7 +123,7 @@ async function wait({selector,func,timeout = 0} = {}) {
 }
 
 function sleep(ms) { 
-    return new Promise((resolve, rejectect) => {
+    return new Promise((resolve, reject) => {
         setTimeout(_ => resolve("sleeped for " + ms),ms)
     })
 }
@@ -295,7 +295,7 @@ app.use(type);
 app.use(express.static('public'));
 
 app.all("*",ServerFunction)
-app.listen(2400)
+app.listen(process.env.PORT ?? 6000)
 
 async function ServerFunction(req,res) { 
     if(browser == undefined) res.end("failed to get the content")
