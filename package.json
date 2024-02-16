@@ -24,7 +24,7 @@
   },
   "scripts": {
     "build": "npm i;npx @puppeteer/browsers install chrome;",
-    "start": "node index.js"
+    "start": "npx puppeteer browsers install chrome;node index.js"
   },
   "keywords": [],
   "author": "",
