@@ -2,8 +2,11 @@ let express = require('express');
 let cors = require('cors');
 let multer = require('multer');
 let fs = require("fs");
+let url = require("url");
 const puppeteerExtra = require('puppeteer-extra');
 const Stealth = require('puppeteer-extra-plugin-stealth');
+
+let pages = {}
 
 puppeteerExtra.use(Stealth());
 
@@ -16,7 +19,7 @@ let {default: puppeteer,executablePath} = require('puppeteer');
 let browser
 (async _ => {
     browser = await puppeteer.launch({
-        headless: "new",
+        headless: 'new',
         timeout: 0,
         executablePath: executablePath(),
     })
@@ -123,7 +126,7 @@ async function wait({selector,func,timeout = 0} = {}) {
 }
 
 function sleep(ms) { 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve, rejectect) => {
         setTimeout(_ => resolve("sleeped for " + ms),ms)
     })
 }
@@ -181,14 +184,23 @@ async function read(file,type) {
     })
 }
 
-async function evaluateScripts(url,scripts,files) {
+async function evaluateScripts(url,id,scripts,files) {
     if(browser == undefined) return {}
-    let page = await browser.newPage()
+
+    async function getPage() {
+        if(id && pages[id]) return pages[id]
+        if(url == 'undefind' || url == '') return
+
+        let page = await browser.newPage()
+        return {page,id: crypto.randomUUID(),expireTime: 0}
+    }
+
+    let pageObject = await getPage()
 
     try {
         await Promise.race([
-            page.goto(url, {timeout: 0}),
-            page.waitForSelector("html")
+            pageObject.page.goto(url, {timeout: 0}),
+            pageObject.page.waitForSelector("html")
         ])
     } catch(err) {}
     
@@ -206,12 +218,22 @@ async function evaluateScripts(url,scripts,files) {
                             let getFile = eval(${getFile.toString()});
                             let readFile = eval(${read.toString()});
                             let lastResult = ${lastResult != undefined ? `JSON.parse(${lastResult})` : `undefined`}
+                            let pageId = '${pageObject.id}'
                             let gotoUrl = url => { 
                                 res({
                                     type: "goto",
                                     url
                                 })
                             };
+
+                            let changeExpireTime = (time = 1000 * 60) => {
+                                if(typeof time != 'number') return
+
+                                res({
+                                    type: "changeExpireTime",
+                                    time
+                                })
+                            }
 
                             let puppeteerClick = (x,y) => res({type: "click",x,y})
                             let puppeteerInputFile = (file,input) => { 
@@ -221,7 +243,7 @@ async function evaluateScripts(url,scripts,files) {
                             }
 
                             let files = (${JSON.stringify(files)})
-                            let scriptResult = await script({gotoUrl,wait,sleep,getFile,readFile,puppeteerClick,puppeteerInputFile})
+                            let scriptResult = await script({gotoUrl,wait,sleep,getFile,readFile,puppeteerClick,puppeteerInputFile,changeExpireTime})
                             res(scriptResult)
                         } catch(_e) {
                             console.error(_e)
@@ -232,32 +254,39 @@ async function evaluateScripts(url,scripts,files) {
                         }
                     })
                 }`
+
                 let func = eval(evalScript)
-                scriptResult = await page.evaluate(func)
+                scriptResult = await pageObject.page.evaluate(func)
 
                 if(scriptResult?.type == "goto" && scriptResult.url) {
-                    let gotoPromise = page.goto(scriptResult.url, {timeout: 0})
+                    let gotoPromise = pageObject.page.goto(scriptResult.url, {timeout: 0})
                     await Promise.race([
                         gotoPromise,
-                        page.waitForSelector("html")
+                        pageObject.page.waitForSelector("html")
                     ])
                     return
                 }
 
                 if(scriptResult?.type == "click") { 
                     let {x,y} = scriptResult
-                    await page.mouse.click(x || 0,y || 0)
+                    await pageObject.page.mouse.click(x || 0,y || 0)
+                }
+
+                if(scriptResult?.type == "changeExpireTime") { 
+                    let {time} = scriptResult
+                    if(typeof time != 'number') return
+                    pageObject.expireTime = time
                 }
 
                 if(scriptResult?.type == "inputFile") { 
                     let {file} = scriptResult
                     let filePath = file.fileInfo.path
-                    let input = await page.$(`input[type=file][data-file="${filePath.replace(/uploads\\/,'')}"]`);
+                    let input = await pageObject.page.$(`input[type=file][data-file="${filePath.replace(/uploads\\/,'')}"]`);
                     let inputingPromise = input.uploadFile(filePath)
 
                     await Promise.race([
                         inputingPromise,
-                        page.waitForSelector("html")
+                        pageObject.page.waitForSelector("html")
                     ])
 
                     await sleep(1000)
@@ -271,8 +300,8 @@ async function evaluateScripts(url,scripts,files) {
                     })
                     break
                 }
-                 
             }
+
             if(scriptResult != undefined) lastResult = JSON.stringify(scriptResult);
             else lastResult = scriptResult
         } catch(_e) {
@@ -284,7 +313,13 @@ async function evaluateScripts(url,scripts,files) {
         }
     }
 
-    await page.close()
+    if(pageObject.expireTime == 0) await pageObject.page.close()
+    else { 
+        timeoutCall = setTimeout(_ => pageObject.page.close(),pageObject.expireTime)
+        pages[pageObject.id] = pageObject
+    }
+
+
     return lastResult
 };
 
@@ -295,12 +330,13 @@ app.use(type);
 app.use(express.static('public'));
 
 app.all("*",ServerFunction)
-app.listen(process.env.PORT ?? 6000)
+app.listen(2400)
 
-async function ServerFunction(req,res) { 
+async function ServerFunction(req,res) {
     if(browser == undefined) res.end("failed to get the content")
+    let urlParem = new URL(req.url,req.headers.origin).pathname.slice(1)
+    let id = req.query.id
 
-    let urlParem = req.url.slice(1)
     if(urlParem == undefined) return res.end("url not found")
     let {scripts,script} = req.body
     let scriptsArray = []
@@ -329,8 +365,7 @@ async function ServerFunction(req,res) {
     }
 
     scriptsArray = scriptsArray.map(script => eval(script))
-    
-    let scriptResult = await evaluateScripts(urlParem,scriptsArray,files);
+    let scriptResult = await evaluateScripts(urlParem,id,scriptsArray,files);
 
     req?.files?.forEach(file => { 
         let {path} = file
